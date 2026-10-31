@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Dict, List, Optional, Set
 from zoneinfo import ZoneInfo
 
 from mep_app.amounts import compute_amounts, mark_duplicates, summarize_vendors
@@ -19,17 +20,17 @@ from mep_app.workbook import WorkbookData
 
 @dataclass
 class Outcome:
-    detail: list[dict]
-    summary: list[dict]
-    anomalies: list[dict]
-    diff: dict | None
+    detail: List[dict]
+    summary: List[dict]
+    anomalies: List[dict]
+    diff: Optional[dict]
     notes: str
     excel: bytes
-    skipped: list[str]
+    skipped: List[str]
 
     @property
-    def totals(self) -> dict[str, Decimal]:
-        totals: dict[str, Decimal] = {}
+    def totals(self) -> Dict[str, Decimal]:
+        totals: Dict[str, Decimal] = {}
         for key in ("本期未稅", "保留款", "稅額", "實際應付"):
             totals[key] = sum((row[key] for row in self.summary), Decimal("0"))
         return totals
@@ -37,12 +38,12 @@ class Outcome:
 
 def run(
     book: WorkbookData,
-    selections: dict[str, dict[str, str]],
-    skips: set[str],
+    selections: Dict[str, Dict[str, str]],
+    skips: Set[str],
     job: dict,
-    previous: WorkbookData | None = None,
-    previous_selections: dict[str, dict[str, str]] | None = None,
-    previous_skips: set[str] | None = None,
+    previous: Optional[WorkbookData] = None,
+    previous_selections: Optional[Dict[str, Dict[str, str]]] = None,
+    previous_skips: Optional[Set[str]] = None,
 ) -> Outcome:
     detail, anomalies = _assemble(book, selections, skips, job)
     summary = summarize_vendors(detail, job["retention_rate"], job["tax_rate"], job["basis"])
@@ -63,8 +64,8 @@ def run(
     )
 
 
-def sheet_problems(book: WorkbookData, selections: dict[str, dict[str, str]], skips: set[str]) -> list[str]:
-    problems: list[str] = []
+def sheet_problems(book: WorkbookData, selections: Dict[str, Dict[str, str]], skips: Set[str]) -> List[str]:
+    problems: List[str] = []
     active = 0
     for sheet in book.sheets:
         if sheet.name in skips:
@@ -87,10 +88,10 @@ def result_fingerprint(
     token: str,
     job: dict,
     selections: dict,
-    skips: set[str],
+    skips: Set[str],
     previous_token: str,
     previous_selections: dict,
-    previous_skips: set[str],
+    previous_skips: Set[str],
 ) -> str:
     payload = {
         "token": token,
@@ -116,9 +117,9 @@ def taipei_now() -> str:
     return datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d %H:%M")
 
 
-def _assemble(book: WorkbookData, selections: dict[str, dict[str, str]], skips: set[str], job: dict):
-    detail: list[dict] = []
-    anomalies: list[dict] = []
+def _assemble(book: WorkbookData, selections: Dict[str, Dict[str, str]], skips: Set[str], job: dict):
+    detail: List[dict] = []
+    anomalies: List[dict] = []
     for sheet in book.sheets:
         if sheet.name in skips:
             continue

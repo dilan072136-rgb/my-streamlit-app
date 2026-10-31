@@ -8,6 +8,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
+from typing import List, Optional, Tuple, Union
 
 import pandas as pd
 from openpyxl.utils.exceptions import InvalidFileException
@@ -25,19 +26,19 @@ class DataRow:
 @dataclass
 class SheetTable:
     name: str
-    headers: list[Header]
-    rows: list[DataRow]
+    headers: List[Header]
+    rows: List[DataRow]
     header_excel_row: int
     header_height: int
 
 
 @dataclass
 class WorkbookData:
-    sheets: list[SheetTable] = field(default_factory=list)
-    skipped: list[str] = field(default_factory=list)
+    sheets: List[SheetTable] = field(default_factory=list)
+    skipped: List[str] = field(default_factory=list)
 
 
-def read_workbook(source: bytes | bytearray | str | Path) -> WorkbookData:
+def read_workbook(source: Union[bytes, bytearray, str, Path]) -> WorkbookData:
     if isinstance(source, (bytes, bytearray)):
         if len(source) > MAX_UPLOAD_BYTES:
             raise ValueError("檔案超過 20MB。請拆成較小的活頁簿再上傳。")
@@ -77,10 +78,10 @@ def read_workbook(source: bytes | bytearray | str | Path) -> WorkbookData:
     return book
 
 
-def _unique_sheet_names(names: list[str]) -> list[str]:
+def _unique_sheet_names(names: List[str]) -> List[str]:
     totals = Counter(names)
     seen: Counter[str] = Counter()
-    unique: list[str] = []
+    unique: List[str] = []
     for name in names:
         seen[name] += 1
         unique.append(name if totals[name] == 1 else f"{name} #{seen[name]}")
@@ -98,9 +99,9 @@ def _cell_str(value: object) -> str:
     return text
 
 
-def _combine(top: list[str], bottom: list[str]) -> list[str]:
+def _combine(top: List[str], bottom: List[str]) -> List[str]:
     width = max(len(top), len(bottom), 0)
-    labels: list[str] = []
+    labels: List[str] = []
     for index in range(width):
         above = top[index].strip() if index < len(top) else ""
         below = bottom[index].strip() if index < len(bottom) else ""
@@ -111,7 +112,7 @@ def _combine(top: list[str], bottom: list[str]) -> list[str]:
     return labels
 
 
-def _parse_sheet(name: str, frame: pd.DataFrame) -> SheetTable | None:
+def _parse_sheet(name: str, frame: pd.DataFrame) -> Optional[SheetTable]:
     raw = frame.where(frame.notna(), None).values.tolist()
     if not raw:
         return None
@@ -120,7 +121,7 @@ def _parse_sheet(name: str, frame: pd.DataFrame) -> SheetTable | None:
         return None
     start, height, labels = choice
     headers = prepare_headers(labels)
-    rows: list[DataRow] = []
+    rows: List[DataRow] = []
     for offset, values in enumerate(raw[start + height :], start=start + height + 1):
         padded = list(values) + [None] * max(0, len(headers) - len(values))
         cells = {header.label: padded[index] for index, header in enumerate(headers)}
@@ -132,15 +133,15 @@ def _parse_sheet(name: str, frame: pd.DataFrame) -> SheetTable | None:
     return SheetTable(name, headers, rows, start + 1, height)
 
 
-def _choose_header(raw: list[list[object]]) -> tuple[int, int, list[str]] | None:
+def _choose_header(raw: List[List[object]]) -> Optional[Tuple[int, int, List[str]]]:
     """回傳 (起始列索引, 標題佔幾列, 欄名)。雙列標題只在合併後更像欄名時採用。"""
-    best: tuple[int, int, int, list[str]] | None = None
+    best: Optional[Tuple[int, int, int, List[str]]] = None
     limit = min(len(raw), HEADER_SCAN_ROWS)
     for index in range(limit):
         top = [_cell_str(value) for value in raw[index]]
         single = score_headers(top)
         combined_score = -1
-        combined: list[str] = []
+        combined: List[str] = []
         if index + 1 < len(raw):
             bottom = [_cell_str(value) for value in raw[index + 1]]
             combined = _combine(top, bottom)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 from mep_app.constants import ALIASES, CANONICAL, NEGATIVE, PLACEHOLDER, UNUSED
 
@@ -18,8 +19,8 @@ class Header:
 @dataclass(frozen=True)
 class Guess:
     field: str
-    column: str | None
-    alternatives: tuple[str, ...]
+    column: Optional[str]
+    alternatives: Tuple[str, ...]
     status: str  # unique, ambiguous, missing
 
 
@@ -30,11 +31,11 @@ def normalize(text: object) -> str:
     return "".join(ch for ch in raw if ch not in drop).strip().casefold()
 
 
-def prepare_headers(raw_labels: list[object]) -> list[Header]:
+def prepare_headers(raw_labels: List[object]) -> List[Header]:
     norms = [normalize(label) for label in raw_labels]
     totals = Counter(norm for norm in norms if norm)
     seen: Counter[str] = Counter()
-    headers: list[Header] = []
+    headers: List[Header] = []
     for index, (raw, norm) in enumerate(zip(raw_labels, norms), start=1):
         if not norm:
             headers.append(Header(f"空白欄{index}", ""))
@@ -46,9 +47,9 @@ def prepare_headers(raw_labels: list[object]) -> list[Header]:
     return headers
 
 
-def guess_column(headers: list[Header], field: str) -> Guess:
+def guess_column(headers: List[Header], field: str) -> Guess:
     """完全相同優先。多欄都像、或完全對不到時，不回傳採用欄。"""
-    exact: list[str] = []
+    exact: List[str] = []
     for alias in ALIASES[field]:
         alias_norm = normalize(alias)
         for header in headers:
@@ -59,7 +60,7 @@ def guess_column(headers: list[Header], field: str) -> Guess:
     if len(exact) > 1:
         return Guess(field, None, tuple(exact), "ambiguous")
 
-    contained: list[str] = []
+    contained: List[str] = []
     blocked = tuple(normalize(word) for word in NEGATIVE.get(field, ()))
     for alias in ALIASES[field]:
         alias_norm = normalize(alias)
@@ -79,11 +80,11 @@ def guess_column(headers: list[Header], field: str) -> Guess:
     return Guess(field, None, (), "missing")
 
 
-def guess_columns(headers: list[Header]) -> list[Guess]:
+def guess_columns(headers: List[Header]) -> List[Guess]:
     return [guess_column(headers, field) for field in CANONICAL]
 
 
-def score_headers(raw_labels: list[object]) -> int:
+def score_headers(raw_labels: List[object]) -> int:
     """標題列要比資料列更像欄名。唯一對上的欄權重高於多個可能。"""
     guesses = guess_columns(prepare_headers(raw_labels))
     score = 0
@@ -95,8 +96,8 @@ def score_headers(raw_labels: list[object]) -> int:
     return score
 
 
-def initial_selection(guesses: list[Guess]) -> dict[str, str]:
-    selection: dict[str, str] = {}
+def initial_selection(guesses: List[Guess]) -> Dict[str, str]:
+    selection: Dict[str, str] = {}
     for guess in guesses:
         if guess.status == "unique" and guess.column:
             selection[guess.field] = guess.column
@@ -107,18 +108,18 @@ def initial_selection(guesses: list[Guess]) -> dict[str, str]:
     return selection
 
 
-def usable(value: str | None) -> bool:
+def usable(value: Optional[str]) -> bool:
     return value not in (None, "", PLACEHOLDER, UNUSED)
 
 
 def sanitize_selection(
-    selection: dict[str, str],
-    headers: list[Header],
-    guesses: list[Guess],
-) -> dict[str, str]:
+    selection: Dict[str, str],
+    headers: List[Header],
+    guesses: List[Guess],
+) -> Dict[str, str]:
     labels = {header.label for header in headers if header.norm}
     base = initial_selection(guesses)
-    clean: dict[str, str] = {}
+    clean: Dict[str, str] = {}
     for field in CANONICAL:
         chosen = selection.get(field, base[field])
         if chosen in labels or chosen in (PLACEHOLDER, UNUSED):
@@ -128,9 +129,9 @@ def sanitize_selection(
     return clean
 
 
-def mapping_problems(selection: dict[str, str], guesses: list[Guess]) -> list[str]:
+def mapping_problems(selection: Dict[str, str], guesses: List[Guess]) -> List[str]:
     """多個欄都像、或缺了算得出錢的欄時，擋下計算。"""
-    problems: list[str] = []
+    problems: List[str] = []
     for guess in guesses:
         chosen = selection.get(guess.field)
         if guess.status == "ambiguous" and chosen in (None, "", PLACEHOLDER):
@@ -145,6 +146,6 @@ def mapping_problems(selection: dict[str, str], guesses: list[Guess]) -> list[st
     return problems
 
 
-def duplicate_columns(selection: dict[str, str]) -> list[str]:
+def duplicate_columns(selection: Dict[str, str]) -> List[str]:
     chosen = [value for value in selection.values() if usable(value)]
     return sorted({value for value in chosen if chosen.count(value) > 1})
