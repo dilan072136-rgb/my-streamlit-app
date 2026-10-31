@@ -240,7 +240,55 @@ def generate_sample_excel() -> bytes:
 # STREAMLIT UI IMPLEMENTATION
 # -----------------------------------------------------------------------------
 
+def check_password() -> bool:
+    """
+    驗證使用者輸入的系統密碼是否正確，用以保護營建財務等敏感性商業數據。
+    解鎖密碼預設為: construction888
+    """
+    CORRECT_PASSWORD = "construction888"
+
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    if st.session_state["password_correct"]:
+        return True
+
+    # 渲染精美登入頁面
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        st.markdown("""
+        <div style="background-color:#1F497D;padding:20px;border-radius:10px 10px 0px 0px;text-align:center;">
+            <h2 style="color:white;margin:0;font-family:'微軟正黑體';">🔒 系統安全鎖定</h2>
+            <p style="color:#D3D3D3;margin:5px 0 0 0;font-size:14px;font-family:'微軟正黑體';">營建估驗保留款與稅額智慧計算系統</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            password_input = st.text_input("請輸入系統密碼：", type="password", placeholder="請輸入安全存取密碼")
+            submit_button = st.form_submit_button("🔑 驗證並解鎖系統", use_container_width=True)
+            
+            if submit_button:
+                if password_input == CORRECT_PASSWORD:
+                    st.session_state["password_correct"] = True
+                    st.rerun()
+                else:
+                    st.error("😕 密碼錯誤，請重新輸入！")
+                    
+        st.markdown("""
+        <div style="text-align:center;margin-top:15px;">
+            <small style="color:gray;font-family:'微軟正黑體';">預設體驗解鎖密碼為 <code>construction888</code></small>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    return False
+
+
 def main():
+    # 密碼安全鎖定
+    if not check_password():
+        st.stop()
+
     st.title("🏗️ 營建估驗保留款與稅額智慧計算系統")
     st.markdown("""
     本系統專為營建工程之**工程估驗、保留款計算與營業稅申報**設計。
