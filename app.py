@@ -243,9 +243,9 @@ def generate_sample_excel() -> bytes:
 def check_password() -> bool:
     """
     驗證使用者輸入的系統密碼是否正確，用以保護營建財務等敏感性商業數據。
-    解鎖密碼預設為: construction888
+    安全驗證機制：密碼已移至雲端 Secrets 後台管理，程式碼內不留存任何明文。
     """
-    CORRECT_PASSWORD = "construction888"
+    CORRECT_PASSWORD = st.secrets["SYSTEM_PASSWORD"]
 
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
