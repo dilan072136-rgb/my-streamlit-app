@@ -1,57 +1,39 @@
-# 🏗️ 營建估驗保留款與稅額智慧計算系統 (Engineering Valuation Smart Calculator)
+# 工程點工與材料損耗資料庫
 
-這是一個專為營建工程之**工程估驗、保留款計算與加值型營業稅申報**設計的 Python 智慧計算系統，採用 Streamlit 提供直觀且高互動性的網頁介面。
+用 SQLite 記錄點工與材料損耗。標準函式庫即可執行，不需要另外安裝套件。
 
-## 🌟 核心解決痛點與功能
+核定工時取申報工時和門禁工時的較小值。金額是核定工時乘上單價，四捨五入到整數元。申報工時大於門禁工時時，狀態記為「超額攔截」。
 
-1. **高精度財務四捨五入（防制浮點數累積誤差）**：
-   - 採用 Python `decimal` 模組的 `ROUND_HALF_UP` 演算法，取代傳統浮點數及 Python 預設之「銀行家捨入法」（ROUND_HALF_EVEN），確保估驗金額、保留款與營業稅額計算完全符合台灣稅務申報與財務審核標準，精確至整數或指定小數位。
-2. **複雜雙列表頭自動辨識與扁平化**：
-   - 解決營建工程 Excel 明細表常見的多層級、合併儲存格複雜表頭（例如：上方「本期估驗」，下方「數量」、「金額」）。系統利用 Forward Fill 演算法自動進行表頭扁平化與欄位對齊。
-3. **安全防護機制（Excel Formula Injection 防範）**：
-   - 防範惡意使用者上傳含有 Excel 注入公式（如以 `=`, `+`, `-`, `@` 開頭之儲存格內容）的表格。系統自動進行跳脫與安全過濾，確保匯出的報表對內部審核人員與財務端 100% 安全。
-4. **精美報表導出與會計格式化**：
-   - 使用 `openpyxl` 生成具備企業級樣式、自適應欄寬、會計學雙下底線、及 Excel 自訂加總公式之 Excel 明細，免去人工重製報表的繁雜手續。
+材料損耗數量是實際用量減設計用量，損耗率是損耗數量除以設計用量再乘上 100。超過上限（預設 5%）記為「異常超損」。設計用量為 0 時損耗率留空，狀態為「無設計用量，需人工確認」；設計和實際都是 0 時，損耗率記 0。
 
----
+## 執行
 
-## 🛠️ 技術棧 (Tech Stack)
+需要 Python 3.9 以上。
 
-* **Web UI Framework**: Streamlit
-* **Data Processing**: Pandas, NumPy
-* **Excel Engine**: Openpyxl
-* **Precision Math**: Decimal (Python Standard Library)
-* **Testing Suite**: Unittest
-
----
-
-## 🚀 快速開始 (Getting Started)
-
-### 1. 安裝依賴環境
-請確保本機已安裝 Python 3.9+。執行以下指令安裝所需套件：
 ```bash
-pip install -r requirements.txt
+python construction_db.py
 ```
 
-### 2. 啟動 Streamlit 網頁服務
-```bash
-streamlit run app.py
-```
-啟動後即可在瀏覽器開啟本地端服務，並於側邊欄點選 **「下載範例 Excel 估驗表」** 取得標準雙列結構範本進行功能測試。
+這會在程式旁邊建立 `construction.db`，並用暫存資料庫跑自我測試。正式檔不會被測試資料寫入。
 
-### 3. 執行單元測試 (Unit Tests)
-為確保高精度計算、雙表頭解析、與公式注入防護之邏輯穩定，專案內建完整的單元測試：
-```bash
-python3 -m unittest test_app.py
+在程式裡寫入：
+
+```python
+from construction_db import (
+    db_session,
+    init_db,
+    insert_contract_item,
+    insert_labor_record,
+    insert_material_record,
+)
+
+init_db()
+with db_session() as conn:
+    insert_contract_item(conn, "1.1", "結構體混凝土澆置", "立方米", 3200)
+    insert_labor_record(conn, "2026-11-02", "A工程行", "王小明", "點工-鋼筋", 10, 8, 350)
+    insert_material_record(conn, "2026-11-02", "1.1", "1F柱", 100, 106)
 ```
 
----
+材料紀錄的工項編號必須先存在於合約工項，否則這筆寫入會失敗，同一筆交易裡還沒提交的變更也會一起還原。
 
-## 📝 專案目錄結構
-
-```
-├── app.py              # Streamlit 應用程式主程式與核心邏輯
-├── test_app.py         # 涵蓋核心算法、安全防護與解析器之單元測試
-├── requirements.txt    # 專案依賴管理文件
-└── README.md           # 專案說明文件
-```
+日期接受 `YYYY-MM-DD`、`YYYY/MM/DD`、`YYYY.MM.DD`，也可以帶時間，例如 `2026-10-01 00:00:00`。存進資料庫時只留日期。

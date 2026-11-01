@@ -1,4 +1,5 @@
 import streamlit as pd_st # Avoid name conflict
+import construction_db as db  # 💡 完美對接你的 construction_db.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -681,6 +682,122 @@ def main():
         )
         
         st.balloons()
+ # -----------------------------------------------------------------------------
+    # 🌟 協作師專案擴充：智慧點工與材料損耗 SQL 中台模組 (嵌入於 main 尾端)
+    # -----------------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🚀 協作師專案擴充：AI 工務資料庫管理中台")
+    st.markdown("底層核心：`construction_db.py` (已啟用 ACID 寫入鎖、64位元溢位防護、Decimal 鎖死計算)")
+    
+    # 建立擴充模組的分頁
+    ext_tab1, ext_tab2 = st.tabs(["📊 點工自動化清洗歸帳 Pipeline", "🧮 材料損耗率跨表即時監控"])
+    
+    # --- 分頁一：點工智慧核銷 ---
+    with ext_tab1:
+        st.write("說明：請上傳分包商點工單 Excel。系統會自動清洗資料，並透過 SQL 比對門禁實測工時攔截溢報金額。")
+        uploaded_labor = st.file_uploader("📥 請上傳分包商「點工請款明細表 (.xlsx)」", type=["xlsx"], key="ext_labor_file")
+        
+        if uploaded_labor is not None:
+            try:
+                df_labor = pd.read_excel(uploaded_labor)
+                st.success("🎉 Excel 點工單讀取成功！")
+                
+                st.markdown("##### ✏️ 線上核對與資料微調區")
+                edited_df = st.data_editor(df_labor, use_container_width=True, key="ed_labor_grid")
+                
+                if st.button("⚡ 執行高嚴謹度 SQL 驗證、算錢並寫入庫", key="ext_btn_save_labor"):
+                    success_count = 0
+                    error_list = []
+                    verified_output = []
+                    
+                    # 調用你寫好的 db_session 取得 IMMEDIATE 交易寫入鎖
+                    with db.db_session() as conn:
+                        for idx, row in edited_df.iterrows():
+                            try:
+                                norm_date = db.normalize_date(row['日期'])
+                                approved_h, total_amt, status = db.calculate_labor_amount(
+                                    row['申報工時'], row['門禁工時'], row['單價']
+                                )
+                                db.insert_labor_record(
+                                    conn, norm_date, row['廠商名稱'], row['工人姓名'],
+                                    row['工種'], row['申報工時'], row['門禁工時'], row['單價']
+                                )
+                                success_count += 1
+                                verified_output.append({
+                                    "日期": norm_date, "廠商名稱": row['廠商名稱'], "工人姓名": row['工人姓名'],
+                                    "工種": row['工種'], "申報工時": row['申報工時'], "門禁工時": row['門禁工時'],
+                                    "系統核定工時": approved_h, "最終結算總額": total_amt, "審查狀態": status
+                                })
+                            except ValueError as ve:
+                                error_list.append(f"第 {idx+2} 列資料未通過安全防護：{str(ve)}")
+                                
+                    if success_count > 0:
+                        st.success(f"💾 成功將 {success_count} 筆通過驗證的點工數據寫入 SQL `labor_records` 表！")
+                        st.dataframe(pd.DataFrame(verified_output), use_container_width=True)
+                    if error_list:
+                        st.error("❌ 以下異常列已被系統自動攔截並拒絕寫入資料庫：")
+                        for err in error_list:
+                            st.warning(err)
+            except Exception as e:
+                st.error(f"點工模組執行出錯，請確認欄位是否包含『日期、廠商名稱、工人姓名、工種、申報工時、門禁工時、單價』。錯誤：{e}")
+        else:
+            st.info("💡 提示：測試點工 Excel 需包含欄位：『日期、廠商名稱、工人姓名、工種、申報工時、門禁工時、單價』。")
 
+    # --- 分頁二：材料動態損耗 ---
+    with ext_tab2:
+        st.write("說明：系統將每日實際進料量與 SQL 內註冊的合約設計量進行動態跨表關聯計算，損耗率超出 5% 自動亮紅燈。")
+        
+        if st.button("🔌 初始化：在 SQL 註冊合約規格（防止材料外鍵關聯報錯）", key="ext_btn_init_mat"):
+            try:
+                with db.db_session() as conn:
+                    db.insert_contract_item(conn, "CONC-3000", "3000psi 結構體混凝土", "立方米", 3200)
+                    db.insert_contract_item(conn, "REBAR-SD280", "竹節鋼筋 (SD280)", "噸", 28000)
+                st.success("✅ 合約規格已順利在 SQL `contract_items` 主表完成註冊！")
+            except Exception as e:
+                st.error(f"合約規格註冊失敗：{e}")
+                
+        st.markdown("---")
+        uploaded_material = st.file_uploader("📥 請上傳工地「每日材料進料紀錄表 (.xlsx)」", type=["xlsx"], key="ext_material_file")
+        
+        if uploaded_material is not None:
+            try:
+                df_mat = pd.read_excel(uploaded_material)
+                st.success("🎉 進料 Excel 讀取成功！")
+                
+                if st.button("🧮 導入 SQL 資料庫並執行跨表即時損耗率試算", key="ext_btn_save_material"):
+                    success_count = 0
+                    with db.db_session() as conn:
+                        for idx, row in df_mat.iterrows():
+                            db.insert_material_record(
+                                conn, row['日期'], row['工項編號'], row['位置'],
+                                row['設計用量'], row['實際用量'], limit_rate=5.0
+                            )
+                            success_count += 1
+                            
+                    st.success(f"💾 已成功清洗並導入 {success_count} 筆每日材料進料單數據至 SQL `material_loss_records` 表。")
+                    
+                    # 實時從 SQL 拉出聯結（JOIN）後的損耗分析大表呈現給前端
+                    conn = db.get_connection()
+                    df_analysis = pd.read_sql_query("""
+                        SELECT m.date as 日期, m.item_code as 工項編號, c.item_name as 工項名稱, m.location as 施工位置,
+                               m.design_qty as '設計量(A)', m.actual_qty as '實際進料(B)', 
+                               m.loss_qty as '動態損耗量', m.loss_rate as '動態損耗率(%)', m.warning_status as 系統狀態
+                        FROM material_loss_records m
+                        JOIN contract_items c ON m.item_code = c.item_code
+                        ORDER BY m.date DESC
+                    """, conn)
+                    conn.close()
+                    
+                    def style_material_status(val):
+                        if "異常" in str(val) or "人工確認" in str(val):
+                            return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+                        return 'background-color: #e6f4ea; color: #137333;'
+                    
+                    st.markdown("##### 📊 SQL 資料庫實時損耗分析大表 ( 跨表聯結查詢結果 )")
+                    st.dataframe(df_analysis.style.applymap(style_material_status, subset=['系統狀態']), use_container_width=True)
+            except Exception as e:
+                st.error(f"材料模組執行出錯，錯誤訊息：{e}")
+        else:
+            st.info("💡 提示：測試材料進料 Excel 需包含欄位：『日期、工項編號、位置、設計用量、實際用量』。")
 if __name__ == "__main__":
     main()
